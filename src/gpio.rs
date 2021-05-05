@@ -684,6 +684,19 @@ macro_rules! gpio {
                     }
                 }
 
+                impl<MODE> InputPin for $PXi<Output<MODE>> {
+                    type Error = Infallible;
+
+                    fn is_high(&self) -> Result<bool, Self::Error> {
+                        Ok(!self.is_low().unwrap())
+                    }
+
+                    fn is_low(&self) -> Result<bool, Self::Error> {
+                        // NOTE(unsafe) atomic read with no side effects
+                        Ok(unsafe { (*$GPIOX::ptr()).idr.read().bits() & (1 << $i) == 0 })
+                    }
+                }
+
                 impl<MODE> ExtiPin for $PXi<Input<MODE>> {
                     /// Configure EXTI Line $i to trigger from this pin.
                     fn make_interrupt_source(&mut self, syscfg: &mut SYSCFG, apb2: &mut APB2) {

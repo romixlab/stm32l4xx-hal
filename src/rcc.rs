@@ -72,6 +72,7 @@ impl RccExt for RCC {
             bdcr: BDCR { _0: () },
             csr: CSR { _0: () },
             crrcr: CRRCR { _0: () },
+            ccipr: CCIPR { _0: () },
             cfgr: CFGR {
                 hse: None,
                 lse: None,
@@ -111,6 +112,8 @@ pub struct Rcc {
     pub csr: CSR,
     /// Clock recovery RC register
     pub crrcr: CRRCR,
+    /// Peripherals independent clock configuration register
+    pub ccipr: CCIPR,
 }
 
 /// CSR Control/Status Register
@@ -148,6 +151,19 @@ impl CRRCR {
     /// Checks if the 48 MHz HSI is ready
     pub fn is_hsi48_ready(&mut self) -> bool {
         self.crrcr().read().hsi48rdy().bit()
+    }
+}
+
+/// Peripherals independent clock configuration register
+pub struct CCIPR {
+    _0: (),
+}
+
+impl CCIPR {
+    #[allow(dead_code)]
+    pub(crate) fn ccipr(&mut self) -> &rcc::CCIPR {
+        // NOTE(unsafe) this proxy grants exclusive access to this register
+        unsafe { &(*RCC::ptr()).ccipr }
     }
 }
 
@@ -238,6 +254,18 @@ impl APB1R1 {
     pub(crate) fn rstr(&mut self) -> &rcc::APB1RSTR1 {
         // NOTE(unsafe) this proxy grants exclusive access to this register
         unsafe { &(*RCC::ptr()).apb1rstr1 }
+    }
+
+    #[cfg(not(any(feature = "stm32l4x3", feature = "stm32l4x5")))]
+    pub(crate) fn enr2(&mut self) -> &rcc::APB1ENR2 {
+        // NOTE(unsafe) this proxy grants exclusive access to this register
+        unsafe { &(*RCC::ptr()).apb1enr2 }
+    }
+
+    #[cfg(not(any(feature = "stm32l4x3", feature = "stm32l4x5")))]
+    pub(crate) fn rstr2(&mut self) -> &rcc::APB1RSTR2 {
+        // NOTE(unsafe) this proxy grants exclusive access to this register
+        unsafe { &(*RCC::ptr()).apb1rstr2 }
     }
 }
 
@@ -668,12 +696,16 @@ impl CFGR {
         // adjust flash wait states
         unsafe {
             acr.acr().write(|w| {
-                w.latency().bits(if sysclk <= 24_000_000 {
+                w.latency().bits(if hclk <= 16_000_000 {
                     0b000
-                } else if sysclk <= 48_000_000 {
+                } else if hclk <= 32_000_000 {
                     0b001
-                } else {
+                } else if hclk <= 48_000_000 {
                     0b010
+                } else if hclk <= 64_000_000 {
+                    0b011
+                } else {
+                    0b100
                 })
             })
         }
@@ -893,9 +925,14 @@ impl Clocks {
         self.msi
     }
 
-    /// Returns status of HSI48
+    /// Returns status of the LSI
     pub fn lsi(&self) -> bool {
         self.lsi
+    }
+
+    // Return the status of the LSE
+    pub fn lse(&self) -> bool {
+        self.lse
     }
 
     /// Returns the frequency of the APB1
@@ -906,6 +943,11 @@ impl Clocks {
     /// Returns the frequency of the APB2
     pub fn pclk2(&self) -> Hertz {
         self.pclk2
+    }
+
+    /// Get which source is being used for PLL
+    pub fn pll_source(&self) -> Option<PllSource> {
+        self.pll_source
     }
 
     // TODO remove `allow`

@@ -67,6 +67,14 @@ pub mod traits;
     feature = "stm32l4x5",
     feature = "stm32l4x6"
 ))]
+pub mod adc;
+#[cfg(any(
+    feature = "stm32l4x1",
+    feature = "stm32l4x2",
+    feature = "stm32l4x3",
+    feature = "stm32l4x5",
+    feature = "stm32l4x6"
+))]
 pub mod crc;
 pub mod datetime;
 #[cfg(any(
@@ -109,6 +117,8 @@ pub mod gpio;
     feature = "stm32l4x6"
 ))]
 pub mod i2c;
+#[cfg(all(feature = "otg_fs", any(feature = "stm32l4x5", feature = "stm32l4x6")))]
+pub mod otg_fs;
 #[cfg(any(
     feature = "stm32l4x1",
     feature = "stm32l4x2",
@@ -134,6 +144,14 @@ pub mod pwm;
 ))]
 pub mod pwr;
 
+#[cfg(any(
+    feature = "stm32l4x1",
+    feature = "stm32l4x2",
+    feature = "stm32l4x3",
+    feature = "stm32l4x5",
+    feature = "stm32l4x6"
+))]
+pub mod lptimer;
 #[cfg(any(
     feature = "stm32l4x1",
     feature = "stm32l4x2",

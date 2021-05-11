@@ -54,6 +54,10 @@ version = "0.2.4"
 features = ["cortex-m", "fs"]
 optional = true
 
+[dependencies.bbqueue]
+version = "0.4"
+optional = true
+
 [package.metadata.docs.rs]
 features = ["rt", "stm32l4x2", "stm32-usbd"]
 
@@ -66,6 +70,7 @@ stm32l4x5 = ["stm32l4/stm32l4x5"]
 stm32l4x6 = ["stm32l4/stm32l4x6"]
 unproven = ["embedded-hal/unproven"]
 otg_fs = ["synopsys-usb-otg"]
+bbqueue_serial_dma = ["bbqueue"]
 
 [dev-dependencies]
 panic-halt = "0.2.0"

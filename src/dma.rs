@@ -284,6 +284,16 @@ impl<BUFFER, CHANNEL> CircBuffer<BUFFER, CHANNEL> {
     }
 }
 
+#[cfg(feature = "bbqueue_serial_dma")]
+pub use bbqueue::{Consumer, GrantR, ArrayLength};
+#[cfg(feature = "bbqueue_serial_dma")]
+pub struct TxContext<N: ArrayLength<u8>, CHANNEL> {
+    consumer: Consumer<'static, N>,
+    channel: CHANNEL,
+    read_grant: Option<GrantR<'static, N>>,
+    read_grant_length: usize,
+}
+
 pub trait DmaExt {
     type Channels;
 
@@ -369,6 +379,8 @@ macro_rules! dma {
 
                 use crate::dma::{CircBuffer, FrameReader, FrameSender, DMAFrame, DmaExt, Error, Event, Half, Transfer, W};
                 use crate::rcc::AHB1;
+                use crate::dma::TxContext;
+                use bbqueue::{Consumer, ArrayLength};
 
                 #[allow(clippy::manual_non_exhaustive)]
                 pub struct Channels((), $(pub $CX),+);
@@ -409,6 +421,12 @@ macro_rules! dma {
                         #[inline]
                         pub fn start(&mut self) {
                             self.ccr().modify(|_, w| w.en().set_bit() );
+                        }
+
+                        /// Returns true if the channel is enabled
+                        #[inline]
+                        pub fn is_started(&self) -> bool {
+                            unsafe { (*$DMAX::ptr()).$ccrX.read().en().bit_is_set() }
                         }
 
                         /// Stops the DMA transfer
@@ -776,6 +794,48 @@ macro_rules! dma {
                                     }
                                 }
                             })
+                        }
+                    }
+
+                    #[cfg(feature = "bbqueue_serial_dma")]
+                    impl<N: ArrayLength<u8>> TxContext<N, $CX> {
+                        pub fn new(consumer: Consumer<'static, N>, channel: $CX) -> Self {
+                            TxContext {
+                                consumer,
+                                channel,
+                                read_grant: None, read_grant_length: 0,
+                            }
+                        }
+
+                        pub fn handle_dma_irq(&mut self) {
+                            // Clear ISR flag (Transfer Complete)
+                            if !self.channel.in_progress() {
+                                self.channel.ifcr().write(|w| w.$ctcifX().set_bit());
+                                self.channel.stop();
+                            }
+                            if self.channel.is_started() {
+                                return;
+                            }
+                            if self.read_grant.is_some() {
+                                // transfer is now complete, release the buffer
+                                // rtt_target::rprintln!(=>5, "{}DMA:tr.finished\n{}", colors::GREEN, colors::DEFAULT);
+                                let read_grant = self.read_grant.take().unwrap();
+                                read_grant.release(self.read_grant_length);
+                                self.read_grant = None;
+                            }
+                            match self.consumer.read() { // send more
+                                Ok(rgr) => {
+                                    let len = rgr.len();
+                                    self.channel.set_transfer_length(len as u16);
+                                    let mem_addr = rgr.as_ptr() as *const _ as u32;
+                                    self.channel.set_memory_address(mem_addr, true);
+                                    self.read_grant = Some(rgr);
+                                    self.read_grant_length = len;
+                                    // rtt_target::rprintln!(=>5, "{}DMA:send {}\n{}", colors::GREEN, len, colors::DEFAULT);
+                                    self.channel.start();
+                                },
+                                Err(_) => {} // nothing to send
+                            }
                         }
                     }
 

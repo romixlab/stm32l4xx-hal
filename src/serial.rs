@@ -203,7 +203,7 @@ macro_rules! hal {
             $usartXen:ident,
             $usartXrst:ident,
             $pclkX:ident,
-            tx: ($dmacst:ident, $tx_chan:path),
+            tx: ($dmacst:ident, $dmareq: literal, $tx_chan:path),
             rx: ($dmacsr:ident, $rx_chan:path),
             $is_full_uart:ident,
         ),
@@ -719,7 +719,7 @@ macro_rules! hal {
 
                     // Tell DMA to request from serial
                     channel.cselr().modify(|_, w| {
-                        w.$dmacst().bits(0b0010) // TODO: Fix this, not valid for DMA2
+                        w.$dmacst().bits($dmareq)
                     });
 
                     channel.ccr().modify(|_, w| unsafe {
@@ -741,14 +741,50 @@ macro_rules! hal {
 
                     FrameSender::new(channel)
                 }
+
+                #[cfg(feature = "bbqueue_serial_dma")]
+                pub fn new_tx_context<N: bbqueue::ArrayLength<u8>>(
+                    self,
+                    mut channel: $tx_chan,
+                    consumer: bbqueue::Consumer<'static, N>
+                ) -> crate::dma::TxContext<N, $tx_chan> {
+                    let usart = unsafe{ &(*pac::$USARTX::ptr()) };
+
+                    // Setup DMA
+                    channel.set_peripheral_address(&usart.tdr as *const _ as u32, false);
+
+                    // Tell DMA to request from serial
+                    channel.cselr().modify(|_, w| {
+                        w.$dmacst().bits($dmareq)
+                    });
+
+                    channel.ccr().modify(|_, w| unsafe {
+                        w.mem2mem()
+                            .clear_bit()
+                            // 00: Low, 01: Medium, 10: High, 11: Very high
+                            .pl()
+                            .bits(0b01)
+                            // 00: 8-bits, 01: 16-bits, 10: 32-bits, 11: Reserved
+                            .msize()
+                            .bits(0b00)
+                            // 00: 8-bits, 01: 16-bits, 10: 32-bits, 11: Reserved
+                            .psize()
+                            .bits(0b00)
+                            // Mem -> Peripheral
+                            .dir()
+                            .set_bit()
+                    });
+                    channel.listen(crate::dma::Event::TransferComplete);
+                    crate::dma::TxContext::<N, $tx_chan>::new(consumer, channel)
+                }
             }
         )+
     }
 }
 
 hal! {
-    USART1: (usart1, APB2, usart1en, usart1rst, pclk2, tx: (c4s, dma1::C4), rx: (c5s, dma1::C5), true,),
-    USART2: (usart2, APB1R1, usart2en, usart2rst, pclk1, tx: (c7s, dma1::C7), rx: (c6s, dma1::C6), true,),
+    USART1: (usart1, APB2, usart1en, usart1rst, pclk2, tx: (c4s, 0b0010, dma1::C4), rx: (c5s, dma1::C5), true,),
+    USART2: (usart2, APB1R1, usart2en, usart2rst, pclk1, tx: (c7s, 0b0010, dma1::C7), rx: (c6s, dma1::C6), true,),
 }
 
 #[cfg(any(
@@ -758,22 +794,22 @@ hal! {
     feature = "stm32l4x6",
 ))]
 hal! {
-    USART3: (usart3, APB1R1, usart3en, usart3rst, pclk1, tx: (c2s, dma1::C2), rx: (c3s, dma1::C3), true,),
+    USART3: (usart3, APB1R1, usart3en, usart3rst, pclk1, tx: (c2s, 0b0010, dma1::C2), rx: (c3s, dma1::C3), true,),
 }
 
 #[cfg(any(feature = "stm32l4x5", feature = "stm32l4x6",))]
 hal! {
-    UART4: (uart4, APB1R1, uart4en, uart4rst, pclk1, tx: (c3s, dma2::C3), rx: (c5s, dma2::C5), true,),
+    UART4: (uart4, APB1R1, uart4en, uart4rst, pclk1, tx: (c3s, 0b0010, dma2::C3), rx: (c5s, dma2::C5), true,),
 }
 
 #[cfg(any(feature = "stm32l4x5", feature = "stm32l4x6",))]
 hal! {
-    UART5: (uart5, APB1R1, uart5en, uart5rst, pclk1, tx: (c1s, dma2::C1), rx: (c2s, dma2::C2), true,),
+    UART5: (uart5, APB1R1, uart5en, uart5rst, pclk1, tx: (c1s, 0b0010, dma2::C1), rx: (c2s, dma2::C2), true,),
 }
 
 #[cfg(feature = "stm32l4x6")]
 hal! {
-    LPUART1: (lpuart1, APB1R2, lpuart1en, lpuart1rst, pclk1, tx: (c6s, dma2::C6), rx: (c7s, dma2::C7), false,),
+    LPUART1: (lpuart1, APB1R2, lpuart1en, lpuart1rst, pclk1, tx: (c6s, 0b0100, dma2::C6), rx: (c7s, dma2::C7), false,),
 }
 
 impl<USART, PINS> fmt::Write for Serial<USART, PINS>

@@ -140,7 +140,10 @@ impl ADC {
         self.set_sample_time(SampleTime::Cycles640_5);
 
         // This can't actually fail, it's just in a result to satisfy hal trait
-        let vref_samp = self.read(vref).unwrap();
+        let mut vref_samp = self.read(vref).unwrap();
+        if vref_samp == 0 {
+            vref_samp = 1;
+        }
 
         self.set_sample_time(old_sample_time);
 
